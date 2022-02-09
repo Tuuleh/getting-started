@@ -1,0 +1,157 @@
+version: 2.1
+
+defaults: &defaults
+  working_directory: ~/getting-started
+  docker:
+    - image: cimg/node:14.15.1
+# Commands are kind of like custom scripts you can write for reusability. 
+# We have a deploy command that takes several arguments so we can reuse this setup for 
+# deployments to the three different environments
+commands:
+  deploy:
+    description: Command to deploy a Kustomize project to the k8s cluster via ArgoCD
+    parameters:
+      image-name:
+        type: string
+        default: getting-started
+      env:
+        type: string
+        default: staging
+      deploy-repo:
+        type: string
+        default: git@github.com:tuuleh/getting-started-deployment.git
+      # Default ssh-fingerprint should be of a machine user belonging to the organization that owns the repository.
+      # Because there's just me, it'll have to be my SSH key.
+      # It cannot be a deployment key, because CircleCI supports just one - the one for the source code repository.
+      # But with a GitOps workflow, it needs to access two repositories - one for source, one for deployment.
+      ssh-fingerprint:
+        type: string
+        default: ""
+      container-registry-user:
+        type: string
+        default: getting-started
+      image-tag: 
+        type: string
+        default: latest
+    steps:
+      # Hack :) Ideally, you'd use a base image that already has kustomize. 
+      # But we can also install it here if we're OK with the increased build time.
+      - run:
+          name: install kustomize
+          command: |
+            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"  | bash
+      - add_ssh_keys:
+          fingerprints:
+            - << parameters.ssh-fingerprint >>
+      - run:
+          name: Avoid hosts unknown for github
+          command: mkdir -p ~/.ssh/ && echo -e "Host github.com\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
+      - run:
+          name: Check out deployment repository
+          command: |
+            [[ -d deploy ]] || git clone << parameters.deploy-repo >> deploy
+      - run:
+          name: Deploy << parameters.env >>
+          command: |
+            cd deploy/overlays/<< parameters.env >>
+            /home/circleci/getting-started/kustomize edit set image << parameters.container-registry-user >>/<< parameters.image-name >>:<< parameters.image-tag >>
+            git config user.email "tuuli.pollanen@gmail.com"
+            git config user.name "$CIRCLE_USERNAME@CircleCI"
+            git diff-index --quiet HEAD || git commit -am "CircleCI:: Releasing a new version << parameters.image-tag >> to << parameters.env >>"
+            git push
+
+# Jobs describe individual units of work to be combined into different workflows
+jobs: 
+  build:
+    working_directory: ~/getting-started
+    docker:
+      - image: cimg/node:14.15.1
+    steps:
+      - checkout
+      - restore_cache:
+          key: npm-cache-{{ checksum "./yarn.lock" }}
+      - run: yarn --cwd ./app install
+      - save_cache:
+          key: yarn-cache-{{ checksum "./yarn.lock" }}
+          paths:
+            - "./node_modules"
+      # Attach the whole current directory into workspace to be used in subsequent steps.
+      - persist_to_workspace:
+          root: .
+          paths: 
+            - .
+  
+  tests:
+    working_directory: ~/getting-started
+    docker:
+      - image: cimg/node:14.15.1
+    steps:
+      - attach_workspace:
+          at: ~/getting-started
+      - run:
+          command: yarn --cwd ./app test
+
+  docker_build:
+    working_directory: ~/getting-started
+    docker:
+      - image: cimg/base:2021.04
+    steps:
+      # setup_remote_docker is needed to use the Docker agent in the circleci docker_build container
+      - setup_remote_docker:
+          version: 19.03.13
+      - checkout
+      - run: docker build -t tuuli/getting-started:${CIRCLE_SHA1:0:7} .
+      - run: docker login -u="tuuli" -p="$DOCKERHUB_PASSWORD"  
+      - run: docker push tuuli/getting-started:${CIRCLE_SHA1:0:7}
+
+  deploy_staging:
+    working_directory: ~/getting-started
+    docker: 
+      - image: cimg/base:2021.04
+    steps:
+      - deploy:
+          env: staging
+          image-tag: ${CIRCLE_SHA1:0:7}
+
+  deploy_production:
+    working_directory: ~/getting-started
+    docker: 
+      - image: cimg/base:2021.04
+    steps:
+      - deploy:
+          env: production
+          image-tag: ${CIRCLE_SHA1:0:7}
+
+
+workflows:
+  version: 2
+  build_test_deploy:
+    jobs:
+      - build
+      - docker_build:
+          context:
+            - dockerhub
+          filters:
+            branches:
+              only:
+                - dev
+                - master
+      - tests:
+          requires:
+            - build
+      - deploy_staging:
+          requires:
+            - tests
+            - docker_build
+          filters:
+            branches:
+              only:
+                - dev
+      - deploy_production:
+          requires:
+            - tests
+            - docker_build
+          filters:
+            branches:
+              only:
+                - master
