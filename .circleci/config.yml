@@ -26,7 +26,7 @@ commands:
       # But with a GitOps workflow, it needs to access two repositories - one for source, one for deployment.
       ssh-fingerprint:
         type: string
-        default: ""
+        default: "d2:cd:41:b4:fa:89:67:36:78:c7:d5:6f:1a:cb:2b:77"
       container-registry-user:
         type: string
         default: getting-started
