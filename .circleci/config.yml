@@ -29,7 +29,7 @@ commands:
         default: "d2:cd:41:b4:fa:89:67:36:78:c7:d5:6f:1a:cb:2b:77"
       container-registry-user:
         type: string
-        default: getting-started
+        default: tuuli
       image-tag: 
         type: string
         default: latest
