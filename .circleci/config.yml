@@ -1,9 +1,5 @@
 version: 2.1
 
-defaults: &defaults
-  working_directory: ~/getting-started
-  docker:
-    - image: cimg/node:14.15.1
 # Commands are kind of like custom scripts you can write for reusability. 
 # We have a deploy command that takes several arguments so we can reuse this setup for 
 # deployments to the three different environments
@@ -80,7 +76,6 @@ jobs:
           root: .
           paths: 
             - .
-  
   tests:
     working_directory: ~/getting-started
     docker:
@@ -134,7 +129,7 @@ workflows:
           filters:
             branches:
               only:
-                - dev
+                - /^feature(?:\/|-|\.).+$/
                 - master
       - tests:
           requires:
@@ -145,8 +140,9 @@ workflows:
             - docker_build
           filters:
             branches:
+            # match any branches that begin with feature- or feature/
               only:
-                - dev
+                - /^feature(?:\/|-|\.).+$/
       - deploy_production:
           requires:
             - tests
