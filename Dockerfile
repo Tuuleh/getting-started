@@ -25,17 +25,8 @@ COPY app/src ./src
 RUN apk add zip && \
     zip -r /app.zip /app
 
-# Dev-ready container - actual files will be mounted in
-FROM base AS dev
-CMD ["mkdocs", "serve", "-a", "0.0.0.0:8000"]
-
-# Do the actual build of the mkdocs site
-FROM base AS build
+# Run a NodeJS server and expose port 8000
+FROM base
 COPY . .
-RUN mkdocs build
-
-# Extract the static content from the build
-# and use a nginx image to serve the content
-FROM nginx:alpine
-COPY --from=app-zip-creator /app.zip /usr/share/nginx/html/assets/app.zip
-COPY --from=build /app/site /usr/share/nginx/html
+EXPOSE 8000
+CMD ["mkdocs", "serve", "-a", "0.0.0.0:8000"]
