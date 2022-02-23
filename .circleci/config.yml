@@ -76,7 +76,6 @@ jobs:
           root: .
           paths: 
             - .
-  
   tests:
     working_directory: ~/getting-started
     docker:
@@ -141,6 +140,7 @@ workflows:
             - docker_build
           filters:
             branches:
+            # match any branches that begin with feature- or feature/
               only:
                 - /^feature(?:\/|-|\.).+$/
       - deploy_production:
